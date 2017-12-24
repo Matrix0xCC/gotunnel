@@ -1,15 +1,15 @@
 package main
 
 import (
+	"fmt"
 	"io"
 	"log"
 	"net"
-	"fmt"
-	"strings"
-	"strconv"
 	"os"
-	"secure"
 	"protocol"
+	"secure"
+	"strconv"
+	"strings"
 )
 
 func main() {
@@ -21,12 +21,18 @@ func main() {
 		port = "9090"
 	}
 
-	log.Printf("start in %s mode", mode)
-
-	listener, err := net.Listen("tcp", "localhost:"+port)
+	var listener net.Listener
+	var err error
+	if mode == "server" {
+		listener, err = net.Listen("tcp", "127.0.0.1:"+port)
+	} else {
+		listener, err = net.Listen("tcp", "localhost:"+port)
+	}
 	if err != nil {
 		log.Fatal(err)
 	}
+
+	log.Printf("start in %s mode", mode)
 
 	for {
 		conn, err := listener.Accept()
@@ -57,9 +63,9 @@ func doHandShake(c io.ReadWriter) error {
 		log.Print(err)
 		return err
 	}
-	log.Print(clientHello)
+	log.Printf("%+v", clientHello)
 
-	c.Write([]byte{0x05, 0x00}) // ServerHello{version:0x05, method: 0x00} // no authentication required
+	c.Write([]byte{0x05, 0x00}) // ServerHello{version:0x05, method: 0x00}, means no authentication required
 
 	return nil
 }
@@ -72,12 +78,14 @@ func handleConnInServerMode(c net.Conn) {
 		return
 	}
 
-	buffer := make([]byte, 256)
+	buffer := make([]byte, 1024)
 	count, err := tunnel.Read(buffer)
 	if err != nil {
 		log.Print(err)
 		return
 	}
+	log.Print(buffer[:count])
+
 	clientCommand, err := proto.DecodeClientCommand(buffer[:count])
 	if err != nil {
 		log.Print(err)
@@ -100,7 +108,7 @@ func handleConnInServerMode(c net.Conn) {
 			0x00,                   //reserved
 			0x01,                   //addressType: ipv4
 			0x00, 0x00, 0x00, 0x00, //ip address
-			0x00, 0x00,             // port in network order
+			0x00, 0x00, // port in network order
 		})
 
 		log.Print(err)
@@ -131,7 +139,7 @@ func handleConnInClientMode(c net.Conn) {
 	io.Copy(c, tunnel)
 }
 
-func tcpAddrToByteArray(addr net.Addr) [] byte {
+func tcpAddrToByteArray(addr net.Addr) []byte {
 	var ip = strings.Split(addr.(*net.TCPAddr).IP.String(), ".")
 
 	b1, _ := strconv.Atoi(ip[0])
