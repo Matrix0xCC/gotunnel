@@ -5,34 +5,22 @@ import (
 	"io"
 	"log"
 	"net"
-	"os"
 	"protocol"
-	"secure"
+	//"secure"
 	"strconv"
 	"strings"
+	"flag"
 )
 
 func main() {
-	var mode = "client"
-	var port = "9000"
 
-	if os.Args != nil && len(os.Args) >= 2 && os.Args[1] == "server" {
-		mode = "server"
-		port = "9090"
-	}
+	config := initConfig()
+	log.Printf("start using config: %+v", config)
 
-	var listener net.Listener
-	var err error
-	if mode == "server" {
-		listener, err = net.Listen("tcp", "127.0.0.1:"+port)
-	} else {
-		listener, err = net.Listen("tcp", "localhost:"+port)
-	}
+	var listener, err = net.Listen("tcp", config.listen)
 	if err != nil {
 		log.Fatal(err)
 	}
-
-	log.Printf("start in %s mode", mode)
 
 	for {
 		conn, err := listener.Accept()
@@ -41,15 +29,15 @@ func main() {
 			continue
 		}
 
-		if mode == "client" {
-			go handleConnInClientMode(conn)
+		if config.mode == "client" {
+			go handleConnInClientMode(conn, config)
 		} else {
-			go handleConnInServerMode(conn)
+			go handleConnInServerMode(conn, config)
 		}
 	}
 }
 
-func doHandShake(c io.ReadWriter) error {
+func handleHandShake(c io.ReadWriter) error {
 	buffer := make([]byte, 256)
 
 	var count, err = c.Read(buffer)
@@ -70,73 +58,82 @@ func doHandShake(c io.ReadWriter) error {
 	return nil
 }
 
-func handleConnInServerMode(c net.Conn) {
-	tunnel := secure.NewSecureTunnel(c)
-	err := doHandShake(tunnel)
+func handleClientCommand(clientTunnel net.Conn) (net.Conn, error){
+	buffer := make([]byte, 1024)
+	count, err := clientTunnel.Read(buffer)
 	if err != nil {
-		log.Print("handshake failed")
-		return
+		return nil, err
 	}
 
-	buffer := make([]byte, 1024)
-	count, err := tunnel.Read(buffer)
-	if err != nil {
-		log.Print(err)
-		return
-	}
 	log.Print(buffer[:count])
 
 	clientCommand, err := proto.DecodeClientCommand(buffer[:count])
 	if err != nil {
-		log.Print(err)
-		return
+		return nil, err
 	}
 
 	if clientCommand.Command != 1 { //1: connect 2:bind 3. udp associate
-		log.Print("unsupported command!")
-		return
+		return nil, fmt.Errorf("unsupported command")
 	}
-	log.Print(fmt.Sprintf("%+v", clientCommand))
+
+	log.Printf("%+v", clientCommand)
 
 	target := fmt.Sprintf("%s:%d", clientCommand.DestAddr, clientCommand.Port)
-
 	server, err := net.Dial("tcp", target)
 	if err != nil {
-		tunnel.Write([]byte{
+		clientTunnel.Write([]byte{
 			0x05,                   //version: 5
 			0x04,                   //reply: 4, host cannot reach
 			0x00,                   //reserved
 			0x01,                   //addressType: ipv4
 			0x00, 0x00, 0x00, 0x00, //ip address
-			0x00, 0x00, // port in network order
+			0x00, 0x00, 			// port in network order
 		})
-
-		log.Print(err)
-		return
+		return nil, fmt.Errorf("failed to connect %s, caused by %s", target, err)
 	}
 
 	var resp = []byte{0x05, 0x00, 0x00, 0x01} //version, reply, reserved, server_address_type
 	resp = append(resp, tcpAddrToByteArray(server.LocalAddr())...)
 	port := server.LocalAddr().(*net.TCPAddr).Port
 	resp = append(resp, byte(port>>8), byte(port&0xFF))
-	tunnel.Write(resp)
+
+	clientTunnel.Write(resp)
+
+	return server, nil
+}
+
+func handleConnInServerMode(c net.Conn, config *Config) {
+	tunnel := c //secure.NewSecureTunnel(c)
+	err := handleHandShake(tunnel)
+	if err != nil {
+		log.Print("handshake failed")
+		return
+	}
+
+	server,err := handleClientCommand(tunnel)
+	if err != nil{
+		log.Print(err)
+		return
+	}
 
 	go io.Copy(tunnel, server)
 	io.Copy(server, tunnel)
-
 }
 
-func handleConnInClientMode(c net.Conn) {
+func handleConnInClientMode(c net.Conn, config *Config) {
+	log.Print("handle client connection begin")
+
 	defer c.Close()
-	server, err := net.Dial("tcp", "127.0.0.1:9090")
+	server, err := net.Dial("tcp", config.connect)
 	if err != nil {
 		log.Print("connect to server failed")
 		return
 	}
 
-	tunnel := secure.NewSecureTunnel(server)
+	tunnel := server//secure.NewSecureTunnel(server)
 	go io.Copy(tunnel, c)
 	io.Copy(c, tunnel)
+	log.Print("io.Copy ended.")
 }
 
 func tcpAddrToByteArray(addr net.Addr) []byte {
@@ -148,4 +145,30 @@ func tcpAddrToByteArray(addr net.Addr) []byte {
 	b4, _ := strconv.Atoi(ip[3])
 
 	return []byte{byte(b1), byte(b2), byte(b3), byte(b4)}
+}
+
+type Config struct{
+	mode string
+	listen string
+	connect string
+}
+
+func initConfig() *Config{
+	var config = new(Config)
+
+	flag.StringVar(&config.mode, "m","client",
+		"running mode. client vs server. default to client")
+
+	flag.StringVar(&config.listen, "l","127.0.0.1:9000",
+		"listen address. used to specified listen address in client or server mode")
+
+	flag.StringVar(&config.connect, "c", "127.0.0.1:9090",
+		"connect address. only used in client mode")
+
+	flag.Parse()
+
+	if config.mode != "client" && config.mode != "server"{
+		log.Fatalf("invalid mode %s. only client and server mode supported.", config.mode)
+	}
+	return config
 }
