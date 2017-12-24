@@ -1,15 +1,15 @@
 package main
 
 import (
+	"flag"
 	"fmt"
 	"io"
 	"log"
 	"net"
 	"protocol"
-	//"secure"
+	"secure"
 	"strconv"
 	"strings"
-	"flag"
 )
 
 func main() {
@@ -58,7 +58,7 @@ func handleHandShake(c io.ReadWriter) error {
 	return nil
 }
 
-func handleClientCommand(clientTunnel net.Conn) (net.Conn, error){
+func handleClientCommand(clientTunnel io.ReadWriter) (net.Conn, error) {
 	buffer := make([]byte, 1024)
 	count, err := clientTunnel.Read(buffer)
 	if err != nil {
@@ -87,7 +87,7 @@ func handleClientCommand(clientTunnel net.Conn) (net.Conn, error){
 			0x00,                   //reserved
 			0x01,                   //addressType: ipv4
 			0x00, 0x00, 0x00, 0x00, //ip address
-			0x00, 0x00, 			// port in network order
+			0x00, 0x00, // port in network order
 		})
 		return nil, fmt.Errorf("failed to connect %s, caused by %s", target, err)
 	}
@@ -103,15 +103,15 @@ func handleClientCommand(clientTunnel net.Conn) (net.Conn, error){
 }
 
 func handleConnInServerMode(c net.Conn, config *Config) {
-	tunnel := c //secure.NewSecureTunnel(c)
+	tunnel := secure.NewSecureTunnel(c)
 	err := handleHandShake(tunnel)
 	if err != nil {
 		log.Print("handshake failed")
 		return
 	}
 
-	server,err := handleClientCommand(tunnel)
-	if err != nil{
+	server, err := handleClientCommand(tunnel)
+	if err != nil {
 		log.Print(err)
 		return
 	}
@@ -130,7 +130,7 @@ func handleConnInClientMode(c net.Conn, config *Config) {
 		return
 	}
 
-	tunnel := server//secure.NewSecureTunnel(server)
+	tunnel := secure.NewSecureTunnel(server)
 	go io.Copy(tunnel, c)
 	io.Copy(c, tunnel)
 	log.Print("io.Copy ended.")
@@ -147,19 +147,19 @@ func tcpAddrToByteArray(addr net.Addr) []byte {
 	return []byte{byte(b1), byte(b2), byte(b3), byte(b4)}
 }
 
-type Config struct{
-	mode string
-	listen string
+type Config struct {
+	mode    string
+	listen  string
 	connect string
 }
 
-func initConfig() *Config{
+func initConfig() *Config {
 	var config = new(Config)
 
-	flag.StringVar(&config.mode, "m","client",
+	flag.StringVar(&config.mode, "m", "client",
 		"running mode. client vs server. default to client")
 
-	flag.StringVar(&config.listen, "l","127.0.0.1:9000",
+	flag.StringVar(&config.listen, "l", "127.0.0.1:9000",
 		"listen address. used to specified listen address in client or server mode")
 
 	flag.StringVar(&config.connect, "c", "127.0.0.1:9090",
@@ -167,7 +167,7 @@ func initConfig() *Config{
 
 	flag.Parse()
 
-	if config.mode != "client" && config.mode != "server"{
+	if config.mode != "client" && config.mode != "server" {
 		log.Fatalf("invalid mode %s. only client and server mode supported.", config.mode)
 	}
 	return config
