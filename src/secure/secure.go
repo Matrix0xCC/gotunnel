@@ -3,13 +3,13 @@ package secure
 import (
 	"crypto/aes"
 	"crypto/cipher"
-	"net"
 	"io"
+	"net"
 )
 
 type AESEncryptor struct {
-	key string
-	block cipher.Block
+	key    string
+	block  cipher.Block
 	stream cipher.Stream
 }
 
@@ -22,7 +22,7 @@ func newAesEncryptor() *AESEncryptor {
 	return encryptor
 }
 
-type Tunnel struct{
+type Tunnel struct {
 	conn          net.Conn
 	encryptor     *AESEncryptor
 	encryptWriter io.Writer
@@ -33,17 +33,16 @@ func NewSecureTunnel(c net.Conn) *Tunnel {
 	var tunnel = new(Tunnel)
 	tunnel.conn = c //
 	tunnel.encryptor = newAesEncryptor()
-	tunnel.encryptWriter = cipher.StreamWriter{S:tunnel.encryptor.stream, W: tunnel.conn}
-	tunnel.decryptReader = cipher.StreamReader{S:tunnel.encryptor.stream, R: tunnel.conn}
+	tunnel.encryptWriter = cipher.StreamWriter{S: tunnel.encryptor.stream, W: tunnel.conn}
+	tunnel.decryptReader = cipher.StreamReader{S: tunnel.encryptor.stream, R: tunnel.conn}
 
 	return tunnel
 }
 
-func (tunnel*Tunnel) Read(p [] byte)(int, error){
+func (tunnel *Tunnel) Read(p []byte) (int, error) {
 	return tunnel.decryptReader.Read(p)
 }
 
-func (tunnel*Tunnel) Write(p []byte)(int, error){
+func (tunnel *Tunnel) Write(p []byte) (int, error) {
 	return tunnel.encryptWriter.Write(p)
 }
-

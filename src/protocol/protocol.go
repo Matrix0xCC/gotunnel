@@ -3,9 +3,9 @@ package proto
 import "fmt"
 
 type ClientHello struct {
-	version   byte
+	version   byte //version, 5
 	methodLen byte
-	method    byte
+	methods   []byte // authentication methods supported by client.
 }
 
 type ServerHello struct {
@@ -26,19 +26,19 @@ type ServerResponse struct {
 	reply       byte //connect status: 0, success;1
 	reserved    byte
 	addressType byte
-	bindAddr    [] byte
+	bindAddr    []byte
 	port        uint16
 }
 
-func DecodeClientHello(buffer [] byte) (*ClientHello, error) {
+func DecodeClientHello(buffer []byte) (*ClientHello, error) {
 	if len(buffer) < 3 {
 		return nil, fmt.Errorf("error parsing ClientHello")
 	}
-	var clientHello = ClientHello{version: buffer[0], methodLen: buffer[1], method: buffer[2]}
+	var clientHello = ClientHello{version: buffer[0], methodLen: buffer[1], methods: buffer[2 : 2+buffer[1]]}
 	return &clientHello, nil
 }
 
-func DecodeClientCommand(buffer [] byte) (*ClientCommand, error) {
+func DecodeClientCommand(buffer []byte) (*ClientCommand, error) {
 	if len(buffer) < 5 {
 		return nil, fmt.Errorf("error parsing ClientHello")
 	}
@@ -50,19 +50,18 @@ func DecodeClientCommand(buffer [] byte) (*ClientCommand, error) {
 	if command.AddressType == 1 { //ipv4
 		//default
 		command.DestAddr = fmt.Sprintf("%d.%d.%d.%d", buffer[begin], buffer[begin+1],
-			buffer[begin+2], buffer[begin+4])
+			buffer[begin+2], buffer[begin+3])
 
 	} else if command.AddressType == 3 { // domain_name
 		begin = 4 + 1
 		addrLen = int(buffer[4])
-		command.DestAddr = string(buffer[begin: begin+addrLen])
+		command.DestAddr = string(buffer[begin : begin+addrLen])
 
 	} else if command.AddressType == 4 { //ipv6
 		addrLen = 16
 		command.DestAddr = fmt.Sprintf("%v", buffer[begin:begin+16])
 	}
 
-	command.DestAddr = string(buffer[begin: begin+addrLen])
 	offset := begin + addrLen
 	command.Port = (uint16(buffer[offset]))<<8 + uint16(buffer[offset+1])
 	return &command, nil
