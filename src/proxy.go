@@ -104,17 +104,13 @@ func handleClientCommand(clientTunnel io.ReadWriter) (net.Conn, error) {
 
 func handleConnInServerMode(c net.Conn, config *Config) {
 	tunnel := secure.NewSecureTunnel(c)
-	err := handleHandShake(tunnel)
-	if err != nil {
-		log.Print("handshake failed")
-		return
-	}
-
 	server, err := handleClientCommand(tunnel)
 	if err != nil {
 		log.Print(err)
 		return
 	}
+	defer c.Close()
+	defer server.Close()
 
 	go io.Copy(tunnel, server)
 	io.Copy(server, tunnel)
@@ -122,18 +118,20 @@ func handleConnInServerMode(c net.Conn, config *Config) {
 
 func handleConnInClientMode(c net.Conn, config *Config) {
 	log.Print("handle client connection begin")
-
 	defer c.Close()
+	//handshake happens between browser and client
+	handleHandShake(c)
+
 	server, err := net.Dial("tcp", config.connect)
 	if err != nil {
 		log.Print("connect to server failed")
 		return
 	}
 
+	defer server.Close()
 	tunnel := secure.NewSecureTunnel(server)
 	go io.Copy(tunnel, c)
 	io.Copy(c, tunnel)
-	log.Print("io.Copy ended.")
 }
 
 func tcpAddrToByteArray(addr net.Addr) []byte {
