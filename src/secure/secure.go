@@ -25,6 +25,7 @@ func newAesEncryptor() *AESEncryptor {
 type Tunnel struct {
 	conn          net.Conn
 	encryptor     *AESEncryptor
+	decryptor     *AESEncryptor
 	encryptWriter io.Writer
 	decryptReader io.Reader
 }
@@ -33,8 +34,9 @@ func NewSecureTunnel(c net.Conn) *Tunnel {
 	var tunnel = new(Tunnel)
 	tunnel.conn = c //
 	tunnel.encryptor = newAesEncryptor()
+	tunnel.decryptor = newAesEncryptor()
 	tunnel.encryptWriter = cipher.StreamWriter{S: tunnel.encryptor.stream, W: tunnel.conn}
-	tunnel.decryptReader = cipher.StreamReader{S: tunnel.encryptor.stream, R: tunnel.conn}
+	tunnel.decryptReader = cipher.StreamReader{S: tunnel.decryptor.stream, R: tunnel.conn}
 
 	return tunnel
 }
