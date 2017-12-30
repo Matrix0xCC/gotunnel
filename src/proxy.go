@@ -8,8 +8,6 @@ import (
 	"net"
 	"protocol"
 	"secure"
-	"strconv"
-	"strings"
 )
 
 func main() {
@@ -58,9 +56,9 @@ func handleHandShake(c io.ReadWriter) error {
 	return nil
 }
 
-func handleClientCommand(clientTunnel io.ReadWriter) (net.Conn, error) {
+func handleClientCommand(client io.ReadWriter) (net.Conn, error) {
 	buffer := make([]byte, 1024)
-	count, err := clientTunnel.Read(buffer)
+	count, err := client.Read(buffer)
 	if err != nil {
 		return nil, err
 	}
@@ -81,7 +79,7 @@ func handleClientCommand(clientTunnel io.ReadWriter) (net.Conn, error) {
 	target := fmt.Sprintf("%s:%d", clientCommand.DestAddr, clientCommand.Port)
 	server, err := net.Dial("tcp", target)
 	if err != nil {
-		clientTunnel.Write([]byte{
+		client.Write([]byte{
 			0x05,                   //version: 5
 			0x04,                   //reply: 4, host cannot reach
 			0x00,                   //reserved
@@ -93,27 +91,33 @@ func handleClientCommand(clientTunnel io.ReadWriter) (net.Conn, error) {
 	}
 
 	var resp = []byte{0x05, 0x00, 0x00, 0x01} //version, reply, reserved, server_address_type
-	resp = append(resp, tcpAddrToByteArray(server.LocalAddr())...)
+
+	ipByte := server.LocalAddr().(*net.TCPAddr).IP.To4()
 	port := server.LocalAddr().(*net.TCPAddr).Port
+	resp = append(resp, ipByte...)
 	resp = append(resp, byte(port>>8), byte(port&0xFF))
 
-	clientTunnel.Write(resp)
+	client.Write(resp)
 
 	return server, nil
 }
 
-func handleConnInServerMode(c net.Conn, config *Config) {
-	tunnel := secure.NewSecureTunnel(c)
+func handleConnInServerMode(proxy net.Conn, config *Config) {
+	tunnel := secure.NewSecureTunnel(proxy)
 	server, err := handleClientCommand(tunnel)
 	if err != nil {
 		log.Print(err)
 		return
 	}
-	defer c.Close()
-	defer server.Close()
 
-	go io.Copy(tunnel, server)
-	io.Copy(server, tunnel)
+	go forward(tunnel, server)
+	forward(server, tunnel)
+}
+
+func forward(to, from io.ReadWriteCloser) {
+	io.Copy(to, from)
+	defer from.Close()
+	defer to.Close()
 }
 
 func handleConnInClientMode(c net.Conn, config *Config) {
@@ -130,19 +134,8 @@ func handleConnInClientMode(c net.Conn, config *Config) {
 
 	defer server.Close()
 	tunnel := secure.NewSecureTunnel(server)
-	go io.Copy(tunnel, c)
-	io.Copy(c, tunnel)
-}
-
-func tcpAddrToByteArray(addr net.Addr) []byte {
-	var ip = strings.Split(addr.(*net.TCPAddr).IP.String(), ".")
-
-	b1, _ := strconv.Atoi(ip[0])
-	b2, _ := strconv.Atoi(ip[1])
-	b3, _ := strconv.Atoi(ip[2])
-	b4, _ := strconv.Atoi(ip[3])
-
-	return []byte{byte(b1), byte(b2), byte(b3), byte(b4)}
+	go forward(tunnel, c)
+	forward(c, tunnel)
 }
 
 type Config struct {
