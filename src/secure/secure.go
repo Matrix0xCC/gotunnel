@@ -48,3 +48,7 @@ func (tunnel *Tunnel) Read(p []byte) (int, error) {
 func (tunnel *Tunnel) Write(p []byte) (int, error) {
 	return tunnel.encryptWriter.Write(p)
 }
+
+func (tunnel *Tunnel) Close() error {
+	return tunnel.conn.Close()
+}
