@@ -21,8 +21,12 @@ func main() {
 		log.Fatal(err)
 	}
 
-	pool := conn.NewTunnelManager(conn.TunnelFactory{tunnelFactory(config.connect)})
-	proxy := &Proxy{config, pool}
+	proxy := new(Proxy)
+	proxy.config = config
+
+	if config.mode == "client" {
+		proxy.pool = conn.NewTunnelManager(conn.TunnelFactory{tunnelFactory(config.connect)})
+	}
 
 	for {
 		conn, err := listener.Accept()
