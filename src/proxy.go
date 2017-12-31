@@ -1,6 +1,7 @@
 package main
 
 import (
+	conn "connection"
 	"flag"
 	"fmt"
 	"io"
@@ -20,6 +21,9 @@ func main() {
 		log.Fatal(err)
 	}
 
+	pool := conn.NewTunnelManager(conn.TunnelFactory{tunnelFactory(config.connect)})
+	proxy := &Proxy{config, pool}
+
 	for {
 		conn, err := listener.Accept()
 		if err != nil {
@@ -28,9 +32,9 @@ func main() {
 		}
 
 		if config.mode == "client" {
-			go handleConnInClientMode(conn, config)
+			go handleConnInClientMode(conn, proxy)
 		} else {
-			go handleConnInServerMode(conn, config)
+			go handleConnInServerMode(conn, proxy)
 		}
 	}
 }
@@ -102,8 +106,8 @@ func handleClientCommand(client io.ReadWriter) (net.Conn, error) {
 	return server, nil
 }
 
-func handleConnInServerMode(proxy net.Conn, config *Config) {
-	tunnel := secure.NewSecureTunnel(proxy)
+func handleConnInServerMode(client net.Conn, proxy *Proxy) {
+	tunnel := secure.NewSecureTunnel(client)
 	server, err := handleClientCommand(tunnel)
 	if err != nil {
 		log.Print(err)
@@ -114,34 +118,36 @@ func handleConnInServerMode(proxy net.Conn, config *Config) {
 	forward(server, tunnel)
 }
 
+func handleConnInClientMode(browser net.Conn, proxy *Proxy) {
+	log.Print("handle client connection begin")
+	//handshake happens between browser and client
+	handleHandShake(browser)
+
+	tunnel, err := proxy.pool.Borrow()
+	if err != nil {
+		log.Print("failed to create tunnel")
+		return
+	}
+
+	go forward(tunnel, browser)
+	forward(browser, tunnel)
+}
+
 func forward(to, from io.ReadWriteCloser) {
 	io.Copy(to, from)
 	defer from.Close()
 	defer to.Close()
 }
 
-func handleConnInClientMode(c net.Conn, config *Config) {
-	log.Print("handle client connection begin")
-	defer c.Close()
-	//handshake happens between browser and client
-	handleHandShake(c)
-
-	server, err := net.Dial("tcp", config.connect)
-	if err != nil {
-		log.Print("connect to server failed")
-		return
-	}
-
-	defer server.Close()
-	tunnel := secure.NewSecureTunnel(server)
-	go forward(tunnel, c)
-	forward(c, tunnel)
-}
-
 type Config struct {
 	mode    string
 	listen  string
 	connect string
+}
+
+type Proxy struct {
+	config *Config
+	pool   *conn.TunnelManager
 }
 
 func initConfig() *Config {
@@ -162,4 +168,16 @@ func initConfig() *Config {
 		log.Fatalf("invalid mode %s. only client and server mode supported.", config.mode)
 	}
 	return config
+}
+
+func tunnelFactory(target string) func() (io.ReadWriteCloser, error) {
+	return func() (io.ReadWriteCloser, error) {
+		server, err := net.Dial("tcp", target)
+		if err != nil {
+			return nil, err
+		}
+
+		tunnel := secure.NewSecureTunnel(server)
+		return tunnel, nil
+	}
 }
