@@ -3,6 +3,7 @@ package connection
 import (
 	"io"
 	"log"
+	"time"
 )
 
 type TunnelFactory struct {
@@ -30,7 +31,8 @@ func (manager *TunnelManager) createTunnels() {
 	for {
 		tunnel, err := manager.factory.NewTunnel()
 		if err != nil {
-			log.Print("create tunnel failed, caused by %s", err)
+			log.Print("create tunnel failed, caused by: ", err)
+			time.Sleep(3 * time.Second)
 			continue
 		}
 		manager.pool <- tunnel
