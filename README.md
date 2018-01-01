@@ -1,6 +1,6 @@
-# gotunnel
+# GoTunnel
 
-A simple and naive ladder writen in less than 300 lines of go code.
+A simple and naive ladder written in less than 300 lines of go code.
 
 # How it works
 
