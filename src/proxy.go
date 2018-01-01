@@ -1,44 +1,34 @@
 package main
 
 import (
-	conn "connection"
-	"flag"
+	"chassis"
 	"fmt"
 	"io"
 	"log"
 	"net"
 	"protocol"
-	"secure"
 )
 
 func main() {
+	proxy := chassis.InitProxy()
+	log.Printf("start using config: %+v", proxy.Config)
 
-	config := initConfig()
-	log.Printf("start using config: %+v", config)
-
-	var listener, err = net.Listen("tcp", config.listen)
+	listener, err := proxy.Listen()
 	if err != nil {
 		log.Fatal(err)
 	}
 
-	proxy := new(Proxy)
-	proxy.config = config
-
-	if config.mode == "client" {
-		proxy.pool = conn.NewTunnelManager(conn.TunnelFactory{tunnelFactory(config.connect)})
-	}
-
 	for {
-		conn, err := listener.Accept()
+		client, err := listener.Accept()
 		if err != nil {
 			log.Fatal(err)
 			continue
 		}
 
-		if config.mode == "client" {
-			go handleConnInClientMode(conn, proxy)
+		if proxy.Config.Mode == "client" {
+			go handleConnInClientMode(client, proxy)
 		} else {
-			go handleConnInServerMode(conn, proxy)
+			go handleConnInServerMode(client, proxy)
 		}
 	}
 }
@@ -87,14 +77,10 @@ func handleClientCommand(client io.ReadWriter) (net.Conn, error) {
 	target := fmt.Sprintf("%s:%d", clientCommand.DestAddr, clientCommand.Port)
 	server, err := net.Dial("tcp", target)
 	if err != nil {
-		client.Write([]byte{
-			0x05,                   //version: 5
-			0x04,                   //reply: 4, host cannot reach
-			0x00,                   //reserved
-			0x01,                   //addressType: ipv4
-			0x00, 0x00, 0x00, 0x00, //ip address
-			0x00, 0x00, // port in network order
-		})
+		//version: 5, reply: 4, host cannot reach, reserved: 0, addressType: ipv4
+		client.Write([]byte{ 0x05, 0x04, 0x00, 0x01,
+			//ip address ,          port in network order
+			0x00, 0x00, 0x00, 0x00, 0x00, 0x00})
 		return nil, fmt.Errorf("failed to connect %s, caused by %s", target, err)
 	}
 
@@ -110,8 +96,7 @@ func handleClientCommand(client io.ReadWriter) (net.Conn, error) {
 	return server, nil
 }
 
-func handleConnInServerMode(client net.Conn, proxy *Proxy) {
-	tunnel := secure.NewSecureTunnel(client)
+func handleConnInServerMode(tunnel io.ReadWriteCloser, proxy *chassis.Proxy) {
 	server, err := handleClientCommand(tunnel)
 	if err != nil {
 		log.Print(err)
@@ -122,12 +107,12 @@ func handleConnInServerMode(client net.Conn, proxy *Proxy) {
 	forward(server, tunnel)
 }
 
-func handleConnInClientMode(browser net.Conn, proxy *Proxy) {
+func handleConnInClientMode(browser io.ReadWriteCloser, proxy *chassis.Proxy) {
 	log.Print("handle client connection begin")
 	//handshake happens between browser and client
 	handleHandShake(browser)
 
-	tunnel, err := proxy.pool.Borrow()
+	tunnel, err := proxy.Pool.Borrow()
 	if err != nil {
 		log.Print("failed to create tunnel")
 		return
@@ -141,47 +126,4 @@ func forward(to, from io.ReadWriteCloser) {
 	io.Copy(to, from)
 	defer from.Close()
 	defer to.Close()
-}
-
-type Config struct {
-	mode    string
-	listen  string
-	connect string
-}
-
-type Proxy struct {
-	config *Config
-	pool   *conn.TunnelManager
-}
-
-func initConfig() *Config {
-	var config = new(Config)
-
-	flag.StringVar(&config.mode, "m", "client",
-		"running mode. client vs server. default to client")
-
-	flag.StringVar(&config.listen, "l", "127.0.0.1:9000",
-		"listen address. used to specified listen address in client or server mode")
-
-	flag.StringVar(&config.connect, "c", "127.0.0.1:9090",
-		"connect address. only used in client mode")
-
-	flag.Parse()
-
-	if config.mode != "client" && config.mode != "server" {
-		log.Fatalf("invalid mode %s. only client and server mode supported.", config.mode)
-	}
-	return config
-}
-
-func tunnelFactory(target string) func() (io.ReadWriteCloser, error) {
-	return func() (io.ReadWriteCloser, error) {
-		server, err := net.Dial("tcp", target)
-		if err != nil {
-			return nil, err
-		}
-
-		tunnel := secure.NewSecureTunnel(server)
-		return tunnel, nil
-	}
 }

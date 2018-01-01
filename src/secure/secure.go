@@ -5,6 +5,7 @@ import (
 	"crypto/cipher"
 	"io"
 	"net"
+	"connection"
 )
 
 type AESEncryptor struct {
@@ -23,14 +24,14 @@ func newAesEncryptor() *AESEncryptor {
 }
 
 type Tunnel struct {
-	conn          net.Conn
+	conn          io.ReadWriteCloser
 	encryptor     *AESEncryptor
 	decryptor     *AESEncryptor
 	encryptWriter io.Writer
 	decryptReader io.Reader
 }
 
-func NewSecureTunnel(c net.Conn) *Tunnel {
+func NewSecureTunnel(c io.ReadWriteCloser) *Tunnel {
 	var tunnel = new(Tunnel)
 	tunnel.conn = c //
 	tunnel.encryptor = newAesEncryptor()
@@ -51,4 +52,23 @@ func (tunnel *Tunnel) Write(p []byte) (int, error) {
 
 func (tunnel *Tunnel) Close() error {
 	return tunnel.conn.Close()
+}
+
+type SimpleTunnelListener struct {
+	connection.BaseListener
+}
+
+func (listener *SimpleTunnelListener) Accept() (io.ReadWriteCloser, error) {
+	conn, err := listener.BaseListener.Accept()
+	return NewSecureTunnel(conn), err
+}
+
+func NewTunnelFactory(target string) func() (io.ReadWriteCloser, error) {
+	return func() (io.ReadWriteCloser, error) {
+		server, err := net.Dial("tcp", target)
+		if err != nil {
+			return nil, err
+		}
+		return NewSecureTunnel(server), nil
+	}
 }
