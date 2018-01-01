@@ -6,6 +6,7 @@ import (
 	"io"
 	"net"
 	"connection"
+	"time"
 )
 
 type AESEncryptor struct {
@@ -60,7 +61,13 @@ type SimpleTunnelListener struct {
 
 func (listener *SimpleTunnelListener) Accept() (io.ReadWriteCloser, error) {
 	conn, err := listener.BaseListener.Accept()
+	setKeepAlive(conn.(*net.TCPConn))
 	return NewSecureTunnel(conn), err
+}
+
+func setKeepAlive(c *net.TCPConn){
+	c.SetKeepAlive(true)
+	c.SetKeepAlivePeriod(30 * time.Second)
 }
 
 func NewTunnelFactory(target string) func() (io.ReadWriteCloser, error) {
@@ -69,6 +76,7 @@ func NewTunnelFactory(target string) func() (io.ReadWriteCloser, error) {
 		if err != nil {
 			return nil, err
 		}
+		setKeepAlive(server.(*net.TCPConn))
 		return NewSecureTunnel(server), nil
 	}
 }
