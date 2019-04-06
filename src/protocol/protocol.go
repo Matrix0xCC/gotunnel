@@ -14,10 +14,13 @@ type ServerHello struct {
 }
 
 type ClientCommand struct {
-	Version     byte
-	Command     byte
-	reserved    byte
-	AddressType byte // 1: ipv4, length: 4 ;3:domain name, length:first byte;4: ipv6 length: 16
+	Version  byte
+	Command  byte
+	reserved byte
+	// 1: ipv4, length: 4 ;
+	// 3:domain name, length:first byte;
+	// 4: ipv6 length: 16
+	AddressType byte
 	DestAddr    string
 	Port        uint16
 }
@@ -39,27 +42,50 @@ func DecodeClientHello(buffer []byte) (*ClientHello, error) {
 }
 
 func DecodeClientCommand(buffer []byte) (*ClientCommand, error) {
-	if len(buffer) < 5 {
-		return nil, fmt.Errorf("error parsing ClientHello")
+	total := len(buffer)
+	if total < 5 {
+		return nil, fmt.Errorf("client command packet is too short")
 	}
 	var command = ClientCommand{Version: buffer[0], Command: buffer[1], reserved: buffer[2], AddressType: buffer[3]}
 
 	//default set to ipv4
-	var begin = 4
-	var addrLen = 4
+	begin := 4
+	checkReadOverFlow := func(addrLen int) error {
+		portLen := 2
+		lenWanted := begin + addrLen + portLen
+		if lenWanted > total {
+			//buffer overflow
+			return fmt.Errorf("malformed packet, wanted length: %d, actually: %d", lenWanted, total)
+		}
+		return nil
+	}
+
+	var addrLen = 0
 	if command.AddressType == 1 { //ipv4
 		//default
+		addrLen = 4
+		if err := checkReadOverFlow(addrLen); err != nil {
+			return nil, err
+		}
 		command.DestAddr = fmt.Sprintf("%d.%d.%d.%d", buffer[begin], buffer[begin+1],
 			buffer[begin+2], buffer[begin+3])
-
 	} else if command.AddressType == 3 { // domain_name
-		begin = 4 + 1
-		addrLen = int(buffer[4])
-		command.DestAddr = string(buffer[begin : begin+addrLen])
-
+		addrLen = int(buffer[4]) //1-255
+		if addrLen == 0 {
+			return nil, fmt.Errorf("domain name length cannot be 0")
+		}
+		if err := checkReadOverFlow(addrLen + 1); err != nil {
+			return nil, err
+		}
+		command.DestAddr = string(buffer[begin+1 : begin+1+addrLen])
 	} else if command.AddressType == 4 { //ipv6
 		addrLen = 16
+		if err := checkReadOverFlow(addrLen + 1); err != nil {
+			return nil, err
+		}
 		command.DestAddr = fmt.Sprintf("%v", buffer[begin:begin+16])
+	} else {
+		return nil, fmt.Errorf("invalid address type %d", command.AddressType)
 	}
 
 	offset := begin + addrLen

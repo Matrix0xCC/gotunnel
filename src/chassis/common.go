@@ -3,10 +3,10 @@ package chassis
 import (
 	"crypto/tls"
 	"flag"
-	"log"
+	conn "github.com/Matrix0xCC/gotunnel/connection"
+	"github.com/Matrix0xCC/gotunnel/secure"
 	"io"
-	"secure"
-	conn "connection"
+	"log"
 )
 
 type Config struct {

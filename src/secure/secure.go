@@ -3,9 +3,9 @@ package secure
 import (
 	"crypto/aes"
 	"crypto/cipher"
+	"github.com/Matrix0xCC/gotunnel/connection"
 	"io"
 	"net"
-	"connection"
 	"time"
 )
 
@@ -65,7 +65,7 @@ func (listener *SimpleTunnelListener) Accept() (io.ReadWriteCloser, error) {
 	return NewSecureTunnel(conn), err
 }
 
-func setKeepAlive(c *net.TCPConn){
+func setKeepAlive(c *net.TCPConn) {
 	c.SetKeepAlive(true)
 	c.SetKeepAlivePeriod(30 * time.Second)
 }

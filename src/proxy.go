@@ -1,12 +1,12 @@
 package main
 
 import (
-	"chassis"
 	"fmt"
+	"github.com/Matrix0xCC/gotunnel/chassis"
+	"github.com/Matrix0xCC/gotunnel/protocol"
 	"io"
 	"log"
 	"net"
-	"protocol"
 )
 
 func main() {
@@ -78,7 +78,7 @@ func handleClientCommand(client io.ReadWriter) (net.Conn, error) {
 	server, err := net.Dial("tcp", target)
 	if err != nil {
 		//version: 5, reply: 4, host cannot reach, reserved: 0, addressType: ipv4
-		client.Write([]byte{ 0x05, 0x04, 0x00, 0x01,
+		client.Write([]byte{0x05, 0x04, 0x00, 0x01,
 			//ip address ,          port in network order
 			0x00, 0x00, 0x00, 0x00, 0x00, 0x00})
 		return nil, fmt.Errorf("failed to connect %s, caused by %s", target, err)
