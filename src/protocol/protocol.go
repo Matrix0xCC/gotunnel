@@ -70,14 +70,15 @@ func DecodeClientCommand(buffer []byte) (*ClientCommand, error) {
 		command.DestAddr = fmt.Sprintf("%d.%d.%d.%d", buffer[begin], buffer[begin+1],
 			buffer[begin+2], buffer[begin+3])
 	} else if command.AddressType == 3 { // domain_name
-		addrLen = int(buffer[4]) //1-255
-		if addrLen == 0 {
+		domainNameLen := int(buffer[4]) //1-255
+		if domainNameLen == 0 {
 			return nil, fmt.Errorf("domain name length cannot be 0")
 		}
-		if err := checkReadOverFlow(addrLen + 1); err != nil {
+		addrLen = domainNameLen + 1
+		if err := checkReadOverFlow(addrLen); err != nil {
 			return nil, err
 		}
-		command.DestAddr = string(buffer[begin+1 : begin+1+addrLen])
+		command.DestAddr = string(buffer[begin+1 : begin+1+domainNameLen])
 	} else if command.AddressType == 4 { //ipv6
 		addrLen = 16
 		if err := checkReadOverFlow(addrLen + 1); err != nil {
