@@ -6,30 +6,28 @@ import (
 	"time"
 )
 
-type TunnelFactory struct {
-	NewTunnel func() (io.ReadWriteCloser, error)
+type TunnelFactory func() (io.ReadWriteCloser, error)
+
+type TunnelPool struct {
+	pool              chan io.ReadWriteCloser
+	coreSize          int
+	connectionFactory TunnelFactory
 }
 
-type TunnelManager struct {
-	coreSize int
-	pool     chan io.ReadWriteCloser
-	factory  TunnelFactory
+func NewTunnelPool(factory TunnelFactory) *TunnelPool {
+	pool := new(TunnelPool)
+	pool.coreSize = 20
+	pool.pool = make(chan io.ReadWriteCloser, pool.coreSize)
+	pool.connectionFactory = factory
+
+	go pool.createTunnels()
+
+	return pool
 }
 
-func NewTunnelManager(factory TunnelFactory) *TunnelManager {
-	manager := new(TunnelManager)
-	manager.coreSize = 20
-	manager.pool = make(chan io.ReadWriteCloser, manager.coreSize)
-	manager.factory = factory
-
-	go manager.createTunnels()
-
-	return manager
-}
-
-func (manager *TunnelManager) createTunnels() {
+func (manager *TunnelPool) createTunnels() {
 	for {
-		tunnel, err := manager.factory.NewTunnel()
+		tunnel, err := manager.connectionFactory()
 		if err != nil {
 			log.Print("create tunnel failed, caused by: ", err)
 			time.Sleep(3 * time.Second)
@@ -39,12 +37,6 @@ func (manager *TunnelManager) createTunnels() {
 	}
 }
 
-func (manager *TunnelManager) Borrow() (io.ReadWriteCloser, error) {
+func (manager *TunnelPool) Borrow() (io.ReadWriteCloser, error) {
 	return <-manager.pool, nil
 }
-
-func (manager *TunnelManager) Return(tunnel io.ReadWriteCloser) error {
-	manager.pool <- tunnel
-	return nil
-}
-

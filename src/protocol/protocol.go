@@ -41,6 +41,10 @@ func DecodeClientHello(buffer []byte) (*ClientHello, error) {
 	return &clientHello, nil
 }
 
+/**
+ * considering most of client commands size is less than MTU(1500),
+ * any command which is longer than 1024 will be ignored
+ */
 func DecodeClientCommand(buffer []byte) (*ClientCommand, error) {
 	total := len(buffer)
 	if total < 5 {
